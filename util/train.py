@@ -9,7 +9,7 @@ import tensorflow.keras as keras
 
 def recover_and_fit(
         model,
-        ckpt_dir = './ckpt_dir',
+        ckpt_path = os.path.join('ckpt'),
         x=None,
         y=None,
         batch_size=None,
@@ -30,7 +30,6 @@ def recover_and_fit(
         workers=1,
         use_multiprocessing=False,
     ):
-    ckpt_path = ckpt_dir + "/cp-{epoch}.ckpt"
     my_callbacks = [
       keras.callbacks.CSVLogger('his.csv', append = True),
       keras.callbacks.ModelCheckpoint(ckpt_path)
@@ -42,8 +41,7 @@ def recover_and_fit(
     try:
       his = pd.read_csv('his.csv')
       initial_epoch = his['epoch'].to_numpy()[-1]
-      recover_ckpt_path = ckpt_dir + "/cp-{initial_epoch}.ckpt"
-      model = keras.models.load_model(recover_ckpt_path)
+      model = keras.models.load_model(ckpt_path)
     except Exception as e:
       print(e, sys.stderr)
       print('Some error happened, train from the scratch.')
