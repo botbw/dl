@@ -30,10 +30,25 @@ frcnn = edict()
 frcnn.use_bias = False
 frcnn.regulizer = None
 frcnn.initializer = tf.keras.initializers.RandomNormal(stddev=0.01)
-frcnn.backbone = tf.keras.applications.vgg16.VGG16(False, None)
-frcnn.nms = edict()
-frcnn.nms.output_size = 2000
-frcnn.nms.iou = 0.7
+frcnn.backbone = tf.keras.applications.vgg16.VGG16(False, weights = 'imagenet')
+
+#train
+train = edict()
+train.nms.max_output_size = 2000
+train.nms.iou_threshold = 0.7
+train.rpn_min_size = 16
+train.rpn_negative_threshold = 0.3
+train.rpn_positive_threshold = 0.7
+train.batch_size = 256
+train.positive_frac = 0.5
+train.rpn_bbox_inside_weights=(1.0, 1.0, 1.0, 1.0)
+train.rpn_positive_weight = 1.0
+
+# test
+test = edict()
+test.nms.max_output_size = 300
+test.nms.iou_threshold = 0.7
+test.rpn_min_size = 16
 
 # overall
 cfg = edict()
@@ -41,3 +56,5 @@ cfg.db = pascal_voc_2012
 cfg.backbone = vgg16
 cfg.anchors = anchors
 cfg.frcnn = frcnn
+cfg.train = train
+cfg.test = test
