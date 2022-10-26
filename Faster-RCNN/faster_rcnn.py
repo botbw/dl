@@ -2,7 +2,6 @@ import sys
 
 sys.path.append("../faster_rcnn_in_tf2_keras")
 
-import gc
 import os
 import numpy as np
 import tensorflow as tf
@@ -470,10 +469,9 @@ class FasterRCNN:
                                           outputs=[rois, cls_prob, bbox_pred])
             return model
 
-    def train(self, epochs, data_root_path, log_dir, save_path):
+    def train(self, epochs, data_root_path, log_dir):
 
         faster_rcnn_model = self.build_graph(is_training=True)
-        faster_rcnn_model.summary()
         optimizer = tf.keras.optimizers.Adam(1e-5)
         # optimizer = tf.keras.optimizers.Nadam(1e-4)
         # optimizer = tf.keras.optimizers.SGD(learning_rate=0.001,momentum=0.9)
@@ -489,14 +487,6 @@ class FasterRCNN:
                                              train_bg_thresh_hi=self.train_bg_thresh_hi,
                                              train_bg_thresh_lo=0.1)
 
-        # test_data_generator = DataGenerator(voc_data_path=data_root_path,
-        #                                     classes=self.classes,
-        #                                     batch_size=1,
-        #                                     is_training=False,
-        #                                     feat_stride=self.feat_stride[0],
-        #                                     train_fg_thresh=self.train_fg_thresh,
-        #                                     train_bg_thresh_hi=self.train_bg_thresh_hi,
-        #                                     train_bg_thresh_lo=0.)
         summary_writer = tf.summary.create_file_writer(log_dir)
 
         for epoch in range(epochs):
@@ -582,11 +572,106 @@ class FasterRCNN:
                                     summ_imgs = tf.cast(summ_imgs, dtype=tf.uint8)
                                     tf.summary.image("imgs/gt,pred,epoch{}".format(epoch), summ_imgs,
                                                      step=batch)
+            faster_rcnn_model.save("./frcnn-epoch-{}.h5".format(epoch))
+        faster_rcnn_model.save_weights("./frcnn-final.h5")
 
-            if epoch % 50 == 0:
-                faster_rcnn_model.save_weights("./frcnn-epoch-{}-loss-{}.h5".format(epoch, np.round(loss, 2)))
+    def continue_training(self, init_epoch, epochs, data_root_path, log_dir):
+        faster_rcnn_model = tf.keras.models.load_model("./frcnn-epoch-{}.h5".format(init_epoch))
+        optimizer = faster_rcnn_model.optimizer
+        train_data_generator = DataGenerator(voc_data_path=data_root_path,
+                                             classes=self.classes,
+                                             batch_size=1,
+                                             feat_stride=self.feat_stride[0],
+                                             train_fg_thresh=self.train_fg_thresh,
+                                             train_bg_thresh_hi=self.train_bg_thresh_hi,
+                                             train_bg_thresh_lo=0.1)
+        summary_writer = tf.summary.create_file_writer(log_dir)
 
-        faster_rcnn_model.save_weights("./frcnn.h5")
+        for epoch in range(init_epoch, epochs):
+            for batch in range(train_data_generator.total_batch_size):
+                print("epcho: {} batch: {}".format(epoch, batch))
+                train_imgs, train_gt_boxes = train_data_generator.next_batch()
+                # anchor_targets, proposal_targets, predictions, cls_prob, bbox_pred = \
+                #     faster_rcnn_model([train_imgs, train_gt_boxes])
+
+                with tf.GradientTape() as tape:
+                    anchor_targets, proposal_targets, predictions, cls_prob, bbox_pred = \
+                        faster_rcnn_model([train_imgs, train_gt_boxes], training=True)
+
+                    loss, cross_entropy, loss_box, rpn_cross_entropy, rpn_loss_box = \
+                        self.compute_losses(anchor_targets, proposal_targets, predictions)
+                    if loss > 0 and cross_entropy > 0 and rpn_cross_entropy > 0:
+
+                        # 梯度更新
+                        grad = tape.gradient(loss, faster_rcnn_model.trainable_variables)
+                        optimizer.apply_gradients(zip(grad, faster_rcnn_model.trainable_variables))
+
+                        # tensorboard loss日志
+                        with summary_writer.as_default():
+                            tf.summary.scalar('loss/loss', loss,
+                                              step=epoch * train_data_generator.total_batch_size + batch)
+                            tf.summary.scalar('loss/cross_entropy', cross_entropy,
+                                              step=epoch * train_data_generator.total_batch_size + batch)
+                            tf.summary.scalar('loss/loss_box', loss_box,
+                                              step=epoch * train_data_generator.total_batch_size + batch)
+                            tf.summary.scalar('loss/rpn_cross_entropy', rpn_cross_entropy,
+                                              step=epoch * train_data_generator.total_batch_size + batch)
+                            tf.summary.scalar('loss/rpn_loss_box', rpn_loss_box,
+                                              step=epoch * train_data_generator.total_batch_size + batch)
+
+                            # tensorboard image效果
+                            if batch % 1 == 0:
+                                rois = predictions['rois']
+                                cls_prob = np.array(cls_prob)
+                                bbox_pred = np.array(bbox_pred)
+                                bbox_pred = np.reshape(bbox_pred, [bbox_pred.shape[0], -1])
+                                bbox_pred = bbox_pred * \
+                                            np.array([self.train_bbox_normalize_stds * len(self.classes)], dtype=np.float32) + \
+                                            np.array([self.train_bbox_normalize_means * len(self.classes)], dtype=np.float32)
+                                pred_boxes = multi_bbox_transform_inv(rois[:, 1:5], bbox_pred)
+                                img_shape = np.shape(train_imgs)
+                                pred_boxes = clip_boxes(pred_boxes, [img_shape[1], img_shape[2]])
+
+                                im = train_imgs[0] + self.pixel_mean
+                                im_pred = im.copy()
+                                im_gt = im.copy()
+                                for j in range(1, len(self.classes)):
+                                    # 非极大抑制
+                                    inds = np.where(cls_prob[:, j] > 0.5)[0]
+                                    # print("class {} > 0.5 nums: {}".format(self.classes[j], len(inds)))
+                                    cls_scores = cls_prob[inds, j]
+                                    cls_boxes = pred_boxes[inds, j * 4:(j + 1) * 4]
+                                    box_and_score = np.concatenate([cls_boxes, np.expand_dims(cls_scores,1)], axis=1)
+                                    keep = box_nms(box_and_score, 0.3)
+                                    cls_dets = cls_scores[keep]
+                                    box_dets = cls_boxes[keep, :]
+                                    for k in range(len(box_dets)):
+                                        im_pred = draw_bounding_box(im=im_pred,
+                                                                    cls=self.classes[j],
+                                                                    scores=cls_dets[k],
+                                                                    x_min=box_dets[k][0],
+                                                                    y_min=box_dets[k][1],
+                                                                    x_max=box_dets[k][2],
+                                                                    y_max=box_dets[k][3])
+
+                                if np.sum(np.where(cls_prob[:, 1:] > 0.5)) > 0:
+                                    for j in range(np.shape(train_gt_boxes)[1]):
+                                        im_gt = draw_bounding_box(im=im_gt,
+                                                                  cls=self.classes[int(train_gt_boxes[0][j][4])],
+                                                                  scores=1.0,
+                                                                  x_min=train_gt_boxes[0][j][0],
+                                                                  y_min=train_gt_boxes[0][j][1],
+                                                                  x_max=train_gt_boxes[0][j][2],
+                                                                  y_max=train_gt_boxes[0][j][3])
+
+                                    concat_imgs = tf.concat([im_gt[:, :, ::-1], im_pred[:, :, ::-1]],
+                                                            axis=1)
+                                    summ_imgs = tf.expand_dims(concat_imgs, 0)
+                                    summ_imgs = tf.cast(summ_imgs, dtype=tf.uint8)
+                                    tf.summary.image("imgs/gt,pred,epoch{}".format(epoch), summ_imgs,
+                                                     step=batch)
+            faster_rcnn_model.save("./frcnn-epoch-{}.h5".format(epoch))
+        faster_rcnn_model.save_weights("./frcnn-final.h5")
 
     def predict(self, im, model_path, prod_threshold=0.85, nms_iou_threshold=0.3, nms_max_output_size=200):
         """
@@ -673,23 +758,3 @@ class FasterRCNN:
                 im = draw_bounding_box(im, "", "", i[0], i[1], i[2], i[3])
         cv2.imwrite("test.jpg", im)
 
-
-if __name__ == "__main__":
-    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
-    for device in gpu_devices:
-        tf.config.experimental.set_memory_growth(device, True)
-    #
-    # np.set_printoptions(suppress=True)
-    # frcnn = FasterRCNN(rpn_positive_overlap=0.7, classes=['__background__', 'cat', 'dog'])
-    # frcnn.train(epochs=100, data_root_path='../../data/detect_data', log_dir='./logs', save_path='./')
-    frcnn = FasterRCNN(rpn_positive_overlap=0.7,
-                       classes=['__background__','bird', 'cat', 'cow', 'dog', 'horse', 'sheep','aeroplane',
-                                'bicycle', 'boat', 'bus', 'car', 'motorbike', 'train', 'bottle', 'chair',
-                                'diningtable', 'pottedplant', 'sofa', 'tvmonitor','person'])
-    frcnn.train(epochs=100, data_root_path='/home/FYP/wang1570/datasets/pascal-voc-2012/VOCdevkit/VOC2012', log_dir='./logs', save_path='./')
-    # frcnn = FasterRCNN(rpn_positive_overlap=0.7,
-    #                        classes=['__background__','car'])
-    # frcnn.train(epochs=100, data_root_path='../../data/bd100k', log_dir='./logs', save_path='./')
-    # frcnn = FasterRCNN(rpn_positive_overlap=0.5,
-    #                        classes=['__background__','Y'])
-    # frcnn.train(epochs=100, data_root_path='./data/voc2012_46_samples', log_dir='./logs', save_path='./')

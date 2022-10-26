@@ -287,8 +287,8 @@ class DataGenerator:
         :return:
         """
         im_shape = im.shape
-        im_size_max = np.max(im_shape[0:2])
-        im_scale = float(self.im_size) / float(im_size_max)
+        im_size_min = np.min(im_shape[0:2])
+        im_scale = float(self.im_size) / float(im_size_min)
         im_resize = cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
 
         im_resize_shape = im_resize.shape

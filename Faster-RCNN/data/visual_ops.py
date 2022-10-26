@@ -7,6 +7,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 def draw_bounding_box(im, cls, scores, x_min, y_min, x_max, y_max, thickness=2, color=(11, 252, 3), txt_size=0.35):
     # draw bounding box
+    x_min = int(x_min)
+    y_min = int(y_min)
+    x_max = int(x_max)
+    y_max = int(y_max)
     cv2.rectangle(im, (x_min, y_min), (x_max, y_max), color=color, thickness=thickness)
     if cls and scores:
         txt = "{}:{:.3f}".format(cls, scores)
