@@ -573,7 +573,7 @@ class FasterRCNN:
                                     tf.summary.image("imgs/gt,pred,epoch{}".format(epoch), summ_imgs,
                                                      step=batch)
             faster_rcnn_model.save("./frcnn-epoch-{}.h5".format(epoch))
-        faster_rcnn_model.save_weights("./frcnn-final.h5")
+        faster_rcnn_model.save("./frcnn-final.h5")
 
     def continue_training(self, init_epoch, epochs, data_root_path, log_dir):
         faster_rcnn_model = tf.keras.models.load_model("./frcnn-epoch-{}.h5".format(init_epoch))
@@ -671,7 +671,7 @@ class FasterRCNN:
                                     tf.summary.image("imgs/gt,pred,epoch{}".format(epoch), summ_imgs,
                                                      step=batch)
             faster_rcnn_model.save("./frcnn-epoch-{}.h5".format(epoch))
-        faster_rcnn_model.save_weights("./frcnn-final.h5")
+        faster_rcnn_model.save("./frcnn-final.h5")
 
     def predict(self, im, model_path, prod_threshold=0.85, nms_iou_threshold=0.3, nms_max_output_size=200):
         """

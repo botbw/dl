@@ -262,17 +262,17 @@ class DataGenerator:
         indices = self.file_indices[self.current_batch_index * self.batch_size:
                                     (self.current_batch_index + 1) * self.batch_size]
         annotation_file = [self.annotation_files[k] for k in indices]
-        print(annotation_file)
+        # print(annotation_file)
         # annotation_file = ["../../data/car_data/Annotations/2011_001100.xml"]
         # annotation_file = ["../../data/voc_data/Annotations/2008_003374.xml"]
         img_file = [self.img_files[k] for k in indices]
-        print(img_file)
+        # print(img_file)
         # img_file = ["../../data/car_data/JPEGImages/2011_001100.jpg"]
         # img_file = ["../../data/voc_data/JPEGImages/2008_003374.jpg"]
         imgs, gt_boxes = self._data_generation(annotation_files=annotation_file,
                                                img_files=img_file)
         self.current_batch_index += 1
-        print(gt_boxes)
+        # print(gt_boxes)
         return imgs, gt_boxes
 
     def _on_epoch_end(self):
@@ -289,15 +289,10 @@ class DataGenerator:
         im_shape = im.shape
         im_size_min = np.min(im_shape[0:2])
         im_scale = float(self.im_size) / float(im_size_min)
-        im_resize = cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
-
-        im_resize_shape = im_resize.shape
-        blob = np.zeros((self.im_size, self.im_size, 3), dtype=np.float32)
-        blob[0:im_resize_shape[0], 0:im_resize_shape[1], :] = im_resize
-
+        im_resize = cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)       
         box[:, :4] = box[:, :4] * im_scale
         # print(im_shape, im_resize_shape, np.shape(blob))
-        return blob, box, im_scale
+        return im_resize, box, im_scale
 
     def _data_generation(self, annotation_files, img_files):
         """

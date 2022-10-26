@@ -100,6 +100,7 @@ class ProposalTargetLayer(tf.keras.layers.Layer):
         bg_inds_selected = tf.random.shuffle(bg_inds)[:bg_rois_nums]
         # total samples
         fg_bg_sample_inds = tf.concat([fg_inds_selected, bg_inds_selected], axis=0)
+        print(fg_bg_sample_inds.shape)
         samples_nums = tf.shape(fg_bg_sample_inds)[0]
         lack_nums = rois_per_image - samples_nums
         lack_samples_inds = tf.reshape(tf.random.categorical(
